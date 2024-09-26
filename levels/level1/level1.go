@@ -3,6 +3,7 @@ package level1
 import (
 	"image/color"
 	"log"
+	"math"
 	"net/url"
 	"strconv"
 	"time"
@@ -46,7 +47,7 @@ type Level1 struct {
 	playerID      int
 	playerX       float64
 	playerY       float64
-	targetX       float64 // Новые целевые координаты
+	targetX       float64 // Целевые координаты
 	targetY       float64
 	capturePoints []CapturePoint
 	players       []Player
@@ -100,17 +101,27 @@ func (l *Level1) listenForUpdates() {
 				return
 			}
 
+			// Обновляем данные игроков
+			for _, p := range gameState.Players {
+				if p.ID == l.playerID {
+					// Если разница в позиции слишком большая, корректируем
+					if math.Abs(p.X-l.playerX) > 10 || math.Abs(p.Y-l.playerY) > 10 {
+						l.playerX = p.X
+						l.playerY = p.Y
+					}
+				}
+			}
+
+			// Обновляем данные игры
 			l.players = gameState.Players
 			l.capturePoints = gameState.CapturePoints
 			l.points1 = gameState.Points1
 			l.points2 = gameState.Points2
-
 		}
 	}
 }
 
 func (l *Level1) Update() error {
-	// Локальная обработка нажатий клавиш
 	keys := map[string]bool{
 		"w": ebiten.IsKeyPressed(ebiten.KeyW),
 		"s": ebiten.IsKeyPressed(ebiten.KeyS),
@@ -118,9 +129,9 @@ func (l *Level1) Update() error {
 		"d": ebiten.IsKeyPressed(ebiten.KeyD),
 	}
 
-	speed := 64.0 * (1.0 / 60)
+	speed := 10.0
+	originalX, originalY := l.playerX, l.playerY
 
-	// Обновляем целевые координаты при нажатии клавиш
 	if keys["w"] {
 		l.playerY -= speed
 	}
@@ -134,23 +145,11 @@ func (l *Level1) Update() error {
 		l.playerX += speed
 	}
 
-	// Отправляем обновления только каждые 100 мс
-	if time.Since(l.lastUpdate) > 16*time.Millisecond {
-		// Отправляем только координаты игрока на сервер
-		data := map[string]interface{}{
-			"id": l.playerID,
-			"x":  l.playerX,
-			"y":  l.playerY,
-		}
-		err := l.conn.WriteJSON(data)
-		if err != nil {
-			log.Println("Ошибка отправки данных:", err)
-			return err
-		}
-		l.lastUpdate = time.Now()
+	// Если позиция изменилась, отправляем данные на сервер
+	if originalX != l.playerX || originalY != l.playerY {
+		l.sendPositionUpdate()
 	}
 
-	// Обрабатываем действия (например, "притяжение" и "отталкивание")
 	if ebiten.IsKeyPressed(ebiten.KeyP) {
 		l.sendAction("pull")
 	}
@@ -159,6 +158,21 @@ func (l *Level1) Update() error {
 	}
 
 	return nil
+}
+
+func (l *Level1) sendPositionUpdate() {
+	if time.Since(l.lastUpdate) > 16*time.Millisecond {
+		data := map[string]interface{}{
+			"id": l.playerID,
+			"x":  l.playerX,
+			"y":  l.playerY,
+		}
+		err := l.conn.WriteJSON(data)
+		if err != nil {
+			log.Println("Ошибка отправки данных:", err)
+		}
+		l.lastUpdate = time.Now()
+	}
 }
 
 func (l *Level1) sendAction(action string) {
@@ -174,17 +188,17 @@ func (l *Level1) sendAction(action string) {
 
 func (l *Level1) Draw(screen *ebiten.Image) {
 	scale := l.game.GetScale()
+	playerColor := color.RGBA{0, 255, 0, 255}
+	drawRect(screen, l.playerX, l.playerY, 20*scale, 20*scale, playerColor)
 
-	// Отрисовка всех игроков
 	for _, p := range l.players {
-		playerColor := color.RGBA{0, 0, 255, 255} // Цвет по умолчанию для других игроков
 		if p.ID == l.playerID {
-			playerColor = color.RGBA{0, 255, 0, 255} // Цвет игрока, если это наш
+			continue
 		}
+		playerColor := color.RGBA{0, 0, 255, 255}
 		drawRect(screen, p.X, p.Y, 20*scale, 20*scale, playerColor)
 	}
 
-	// Отрисовка захватных точек
 	for _, cp := range l.capturePoints {
 		ebitenutil.DebugPrintAt(screen, "CP: X="+strconv.FormatFloat(cp.X, 'f', 1, 64)+" Y="+strconv.FormatFloat(cp.Y, 'f', 1, 64), int(cp.X), int(cp.Y)-20)
 
