@@ -58,16 +58,31 @@ type Level1 struct {
 	lastUpdate    time.Time
 }
 
-func New(game GameInterface, playerID int) *Level1 {
+func New(game GameInterface) *Level1 {
+	// Устанавливаем подключение к серверу WebSocket
 	u := url.URL{Scheme: "ws", Host: "localhost:8080", Path: "/ws"}
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Fatal("Ошибка подключения к WebSocket серверу:", err)
 	}
 
+	// Ожидаем получения playerID от сервера
+	var response map[string]interface{}
+	err = conn.ReadJSON(&response)
+	if err != nil {
+		log.Fatal("Ошибка получения playerID от сервера:", err)
+	}
+
+	// Преобразуем полученный playerID в int (он может быть float64 из-за особенностей JSON)
+	playerID, ok := response["playerID"].(float64)
+	if !ok {
+		log.Fatal("Некорректный формат playerID")
+	}
+
+	// Создаем уровень с полученным playerID
 	l := &Level1{
 		game:     game,
-		playerID: playerID,
+		playerID: int(playerID), // Преобразуем в int
 		playerX:  400,
 		playerY:  400,
 		targetX:  400,
@@ -83,6 +98,7 @@ func New(game GameInterface, playerID int) *Level1 {
 		lastUpdate: time.Now(),
 	}
 
+	// Запускаем прослушивание обновлений с сервера
 	go l.listenForUpdates()
 
 	return l

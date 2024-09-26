@@ -91,7 +91,7 @@ func (g *Game) loadNextLevel() {
 
 	switch g.nextLevel {
 	case 1:
-		g.currentLevel = level1.New(g, 1)
+		g.currentLevel = level1.New(g)
 	case 2:
 		g.currentLevel = level2.New(g)
 	case 5:
