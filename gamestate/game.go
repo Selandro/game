@@ -1,12 +1,14 @@
 package gamestate
 
 import (
+	"log"
 	"math"
 	"time"
 
 	"main.go/levels/level1"
 	"main.go/levels/level2"
 	"main.go/levels/level5"
+	sprites "main.go/resourses/img"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -91,6 +93,9 @@ func (g *Game) loadNextLevel() {
 
 	switch g.nextLevel {
 	case 1:
+		if err := sprites.LoadSprites(); err != nil {
+			log.Fatal("Ошибка загрузки спрайтов:", err)
+		}
 		g.currentLevel = level1.New(g)
 	case 2:
 		g.currentLevel = level2.New(g)
