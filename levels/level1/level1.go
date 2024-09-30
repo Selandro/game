@@ -15,9 +15,12 @@ import (
 )
 
 type Player struct {
-	ID int     `json:"id"`
-	X  float64 `json:"x"`
-	Y  float64 `json:"y"`
+	ID             int       `json:"id"`
+	X              float64   `json:"x"`
+	Y              float64   `json:"y"`
+	PrevX          float64   // предыдущая X позиция для интерполяции
+	PrevY          float64   // предыдущая Y позиция для интерполяции
+	LastUpdateTime time.Time // время последнего обновления с сервера
 }
 
 type CapturePoint struct {
@@ -147,8 +150,14 @@ func (l *Level1) updateGameState(state GameState) {
 	l.points2 = state.Points2
 
 	// Обновляем координаты только для своего игрока
-	for _, player := range state.Players {
+	for i, player := range state.Players {
 		if player.ID == l.playerID {
+			// Сохраняем предыдущую позицию
+			l.players[i].PrevX = l.players[i].X
+			l.players[i].PrevY = l.players[i].Y
+			l.players[i].LastUpdateTime = time.Now()
+
+			// Обновляем позицию игрока
 			l.playerX = player.X
 			l.playerY = player.Y
 		}
@@ -243,7 +252,9 @@ func (l *Level1) sendAction(action string) {
 		return
 	}
 }
-
+func lerp(start, end, t float64) float64 {
+	return start + (end-start)*t
+}
 func (l *Level1) Draw(screen *ebiten.Image) {
 	// Определяем флаг для отражения спрайта игрока
 	var flipX bool
@@ -267,12 +278,18 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 		if p.ID == l.playerID {
 			continue
 		}
+		t := time.Since(p.LastUpdateTime).Seconds() / 0.1
+		if t > 1 {
+			t = 1
+		}
 
+		x := lerp(p.PrevX, p.X, t)
+		y := lerp(p.PrevY, p.Y, t)
 		// Подготавливаем параметры для отрисовки спрайта врага
 		enemyOp := &ebiten.DrawImageOptions{}
 
 		// Устанавливаем позицию врага
-		sprites.EnemySprite.Draw(screen, p.X, p.Y, enemyOp) // Отрисовка врага
+		sprites.EnemySprite.Draw(screen, x, y, enemyOp) // Отрисовка врага
 	}
 
 	// Отрисовка точек захвата
