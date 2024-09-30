@@ -1,14 +1,13 @@
 package level1
 
 import (
+	"encoding/json"
 	"image/color"
 	"log"
-	"math"
-	"net/url"
+	"net"
 	"strconv"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -52,84 +51,120 @@ type Level1 struct {
 	players       []Player
 	points1       int
 	points2       int
-	conn          *websocket.Conn
+	conn          *net.UDPConn
 	done          chan struct{}
 	lastUpdate    time.Time
+	serverAddr    *net.UDPAddr
 }
 
+// New инициализирует уровень и подключается к серверу через UDP
 func New(game GameInterface) *Level1 {
-	// Устанавливаем подключение к серверу WebSocket
-	u := url.URL{Scheme: "ws", Host: "localhost:8080", Path: "/ws"}
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	// Настраиваем UDP соединение
+	serverAddr, err := net.ResolveUDPAddr("udp", "localhost:8080")
 	if err != nil {
-		log.Fatal("Ошибка подключения к WebSocket серверу:", err)
+		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-
-	// Ожидаем получения playerID от сервера
-	var response map[string]interface{}
-	err = conn.ReadJSON(&response)
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8083") // Уникальный порт для первого клиента
 	if err != nil {
-		log.Fatal("Ошибка получения playerID от сервера:", err)
+		log.Fatal("Ошибка при резолве адреса UDP:", err)
+	}
+	conn, err := net.DialUDP("udp", localAddr, serverAddr)
+	if err != nil {
+		log.Fatal("Ошибка подключения к UDP серверу:", err)
 	}
 
-	// Преобразуем полученный playerID в int (он может быть float64 из-за особенностей JSON)
-	playerID, ok := response["playerID"].(float64)
-	if !ok {
-		log.Fatal("Некорректный формат playerID")
-	}
-
-	// Создаем уровень с полученным playerID
-	l := &Level1{
-		game:     game,
-		playerID: int(playerID), // Преобразуем в int
-		playerX:  400,
-		playerY:  400,
-		conn:     conn,
-		capturePoints: []CapturePoint{
-			{X: 300, Y: 200, Radius: 50},
-			{X: 800, Y: 600, Radius: 50},
-		},
-		points1:    0,
-		points2:    0,
+	level := &Level1{
+		game:       game,
+		conn:       conn,
+		serverAddr: serverAddr,
 		done:       make(chan struct{}),
-		lastUpdate: time.Now(),
+		playerID:   0, // Пока ID неизвестен
 	}
 
-	// Запускаем прослушивание обновлений с сервера
-	go l.listenForUpdates()
+	// Получение playerID от сервера
+	level.requestPlayerID()
 
-	return l
+	go level.listenForUpdates()
+
+	return level
 }
 
+func (l *Level1) requestPlayerID() {
+	// Отправляем запрос на получение playerID
+	initialMsg := map[string]interface{}{
+		"request": "get_player_id",
+	}
+	data, _ := json.Marshal(initialMsg)
+	l.conn.Write(data)
+
+	// Ожидаем ответ от сервера с playerID
+	buffer := make([]byte, 1024)
+	n, _, err := l.conn.ReadFrom(buffer)
+	if err != nil {
+		log.Println("Ошибка получения данных от сервера:", err)
+		return
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(buffer[:n], &response); err != nil {
+		log.Println("Ошибка разбора данных от сервера:", err)
+		return
+	}
+
+	// Сохраняем playerID, полученный от сервера
+	if id, ok := response["id"].(float64); ok {
+		l.playerID = int(id)
+		log.Printf("Получен playerID: %d", l.playerID)
+	}
+}
+
+// sendMessage отправляет сообщение на сервер
+func (l *Level1) sendMessage(msg map[string]interface{}) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Println("Ошибка при сериализации сообщения:", err)
+		return
+	}
+
+	_, err = l.conn.Write(data)
+	if err != nil {
+		log.Println("Ошибка при отправке сообщения через UDP:", err)
+	}
+}
+
+// listenForUpdates получает обновления от сервера
 func (l *Level1) listenForUpdates() {
+	buffer := make([]byte, 1024)
 	for {
-		select {
-		case <-l.done:
+		n, _, err := l.conn.ReadFromUDP(buffer)
+		if err != nil {
+			log.Println("Ошибка при чтении данных от сервера:", err)
 			return
-		default:
-			var gameState GameState
-			err := l.conn.ReadJSON(&gameState)
-			if err != nil {
-				log.Println("Ошибка получения состояния игры:", err)
-				return
-			}
+		}
 
-			// Обновляем данные игроков
-			for _, p := range gameState.Players {
-				if p.ID == l.playerID {
-					// Если разница в позиции слишком большая, корректируем
-					if math.Abs(p.X-l.playerX) > 20 || math.Abs(p.Y-l.playerY) > 20 {
-						l.playerX = p.X
-						l.playerY = p.Y
-					}
-				}
-			}
+		var gameState GameState
+		err = json.Unmarshal(buffer[:n], &gameState)
+		if err != nil {
+			log.Println("Ошибка при десериализации данных:", err)
+			continue
+		}
 
-			// Обновляем данные игры
-			l.players = gameState.Players
-			l.capturePoints = gameState.CapturePoints
-			l.points1 = gameState.Points1
-			l.points2 = gameState.Points2
+		// Обновляем состояние игры на основе полученных данных
+		l.updateGameState(gameState)
+	}
+}
+
+func (l *Level1) updateGameState(state GameState) {
+	l.players = state.Players
+	l.capturePoints = state.CapturePoints
+	l.points1 = state.Points1
+	l.points2 = state.Points2
+
+	// Обновляем координаты только для своего игрока
+	for _, player := range state.Players {
+		if player.ID == l.playerID {
+			l.playerX = player.X
+			l.playerY = player.Y
 		}
 	}
 }
@@ -175,20 +210,51 @@ func (l *Level1) Update() error {
 
 func (l *Level1) sendPositionUpdate() {
 	if time.Since(l.lastUpdate) > 10*time.Millisecond {
-		data := map[string]interface{}{"id": l.playerID, "x": l.playerX, "y": l.playerY}
-		err := l.conn.WriteJSON(data)
-		if err != nil {
-			log.Println("Ошибка отправки данных:", err)
+		// Формируем данные для отправки
+		data := map[string]interface{}{
+			"id": l.playerID,
+			"x":  l.playerX,
+			"y":  l.playerY,
 		}
+
+		// Сериализуем данные в JSON
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			log.Println("Ошибка сериализации данных:", err)
+			return
+		}
+
+		// Отправляем сериализованные данные через UDP
+		_, err = l.conn.Write(jsonData)
+		if err != nil {
+			log.Println("Ошибка отправки данных через UDP:", err)
+			return
+		}
+
+		// Обновляем время последней отправки
 		l.lastUpdate = time.Now()
 	}
 }
 
 func (l *Level1) sendAction(action string) {
-	data := map[string]interface{}{"id": l.playerID, "action": action}
-	err := l.conn.WriteJSON(data)
+	// Формируем данные для отправки
+	data := map[string]interface{}{
+		"id":     l.playerID,
+		"action": action,
+	}
+
+	// Сериализуем данные в JSON
+	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Println("Ошибка отправки действия:", err)
+		log.Println("Ошибка сериализации данных:", err)
+		return
+	}
+
+	// Отправляем данные через UDP
+	_, err = l.conn.Write(jsonData)
+	if err != nil {
+		log.Println("Ошибка отправки данных через UDP:", err)
+		return
 	}
 }
 
