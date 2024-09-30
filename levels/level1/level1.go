@@ -64,7 +64,7 @@ func New(game GameInterface) *Level1 {
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8083") // Уникальный порт для первого клиента
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8082") // Уникальный порт для первого клиента
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
@@ -98,7 +98,7 @@ func (l *Level1) requestPlayerID() {
 	l.conn.Write(data)
 
 	// Ожидаем ответ от сервера с playerID
-	buffer := make([]byte, 1024)
+	buffer := make([]byte, 2048)
 	n, _, err := l.conn.ReadFrom(buffer)
 	if err != nil {
 		log.Println("Ошибка получения данных от сервера:", err)
@@ -115,20 +115,6 @@ func (l *Level1) requestPlayerID() {
 	if id, ok := response["id"].(float64); ok {
 		l.playerID = int(id)
 		log.Printf("Получен playerID: %d", l.playerID)
-	}
-}
-
-// sendMessage отправляет сообщение на сервер
-func (l *Level1) sendMessage(msg map[string]interface{}) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Println("Ошибка при сериализации сообщения:", err)
-		return
-	}
-
-	_, err = l.conn.Write(data)
-	if err != nil {
-		log.Println("Ошибка при отправке сообщения через UDP:", err)
 	}
 }
 
