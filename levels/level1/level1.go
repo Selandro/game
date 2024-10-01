@@ -123,7 +123,7 @@ func (l *Level1) requestPlayerID() {
 
 // listenForUpdates получает обновления от сервера
 func (l *Level1) listenForUpdates() {
-	buffer := make([]byte, 1024)
+	buffer := make([]byte, 2048)
 	for {
 		n, _, err := l.conn.ReadFromUDP(buffer)
 		if err != nil {
@@ -160,6 +160,11 @@ func (l *Level1) updateGameState(state GameState) {
 			// Обновляем позицию игрока
 			l.playerX = player.X
 			l.playerY = player.Y
+		} else {
+			// Для других игроков, просто обновляем их предыдущие координаты
+			l.players[i].PrevX = l.players[i].X
+			l.players[i].PrevY = l.players[i].Y
+			l.players[i].LastUpdateTime = time.Now()
 		}
 	}
 }
@@ -252,9 +257,18 @@ func (l *Level1) sendAction(action string) {
 		return
 	}
 }
+func easeInOut(t float64) float64 {
+	if t < 0.5 {
+		return 2 * t * t
+	}
+	return -1 + (4-2*t)*t
+}
+
 func lerp(start, end, t float64) float64 {
+	t = easeInOut(t)
 	return start + (end-start)*t
 }
+
 func (l *Level1) Draw(screen *ebiten.Image) {
 	// Определяем флаг для отражения спрайта игрока
 	var flipX bool
@@ -278,7 +292,7 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 		if p.ID == l.playerID {
 			continue
 		}
-		t := time.Since(p.LastUpdateTime).Seconds() / 0.1
+		t := time.Since(p.LastUpdateTime).Seconds() / 0.2
 		if t > 1 {
 			t = 1
 		}
