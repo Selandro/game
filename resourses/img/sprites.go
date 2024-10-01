@@ -97,7 +97,7 @@ func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y float64, op *ebiten.Dra
 	}
 
 	// Смещаем на центр спрайта
-	op.GeoM.Translate(x-frameWidth/2, y-frameHeight/2)
+	op.GeoM.Translate(x-frameWidth/2, y-frameHeight/2-60)
 
 	// Рисуем текущий кадр
 	screen.DrawImage(s.Frames[s.Current], op)

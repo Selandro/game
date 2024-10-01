@@ -2,6 +2,7 @@ package level1
 
 import (
 	"encoding/json"
+	"fmt"
 	"image/color"
 	"log"
 	"net"
@@ -24,13 +25,14 @@ type Player struct {
 }
 
 type CapturePoint struct {
-	X               float64   `json:"x"`
-	Y               float64   `json:"y"`
-	Radius          float64   `json:"radius"`
-	IsCaptured      bool      `json:"isCaptured"`
-	CapturingPlayer int       `json:"capturingPlayer"`
-	CaptureStart    time.Time `json:"captureStart"`
-	EnterTime       time.Time `json:"enterTime"`
+	X                      float64   `json:"x"`
+	Y                      float64   `json:"y"`
+	Radius                 float64   `json:"radius"`
+	IsCaptured             bool      `json:"isCaptured"`
+	CapturingPlayer        int       `json:"capturingPlayer"`
+	CaptureStart           time.Time `json:"captureStart"`
+	EnterTime              time.Time `json:"enterTime"`
+	CurrentCapturingPlayer int       `json:"currentCapturingPlayer"`
 }
 
 type GameState struct {
@@ -300,40 +302,141 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 		sprites.EnemySprite.Draw(screen, x, y, enemyOp) // Отрисовка врага
 	}
 
-	// Отрисовка точек захвата
 	for _, cp := range l.capturePoints {
+		// Отображение информации о точке захвата
 		ebitenutil.DebugPrintAt(screen, "CP: X="+strconv.FormatFloat(cp.X, 'f', 1, 64)+" Y="+strconv.FormatFloat(cp.Y, 'f', 1, 64), int(cp.X), int(cp.Y)-20)
 
 		if cp.Radius < 10 {
 			cp.Radius = 10
 		}
 
-		drawCircle(screen, cp.X, cp.Y, cp.Radius, color.RGBA{255, 0, 0, 100})
+		// Основной круг точки захвата (красный, если не захвачена)
+		if !cp.IsCaptured {
+			drawCircleOutlineWithEffects(screen, cp.X, cp.Y, cp.Radius, color.RGBA{255, 0, 0, 100})
+		} else {
+			// Отображаем цвет игрока, который владеет точкой
+			playerColor := getPlayerColor(cp.CapturingPlayer)
+			drawCircleOutlineWithEffects(screen, cp.X, cp.Y, cp.Radius, playerColor)
+		}
 
-		if cp.IsCaptured {
-			if cp.CapturingPlayer == 1 {
-				drawCircle(screen, cp.X, cp.Y, cp.Radius, color.RGBA{0, 255, 0, 100})
-			} else if cp.CapturingPlayer == 2 {
-				drawCircle(screen, cp.X, cp.Y, cp.Radius, color.RGBA{0, 0, 255, 100})
+		// Проверяем, захватывается ли точка
+		if cp.CurrentCapturingPlayer != 0 {
+			// Если захватывает игрок, который уже владеет точкой, ничего не делаем
+			if cp.CurrentCapturingPlayer == cp.CapturingPlayer {
+				continue
+			}
+
+			// Прогресс захвата для текущего игрока
+			progress := time.Since(cp.EnterTime).Seconds() / 5.0 // Захват занимает 5 секунд
+			if progress > 1 {
+				progress = 1
+			}
+
+			// Получаем цвет игрока, который сейчас захватывает
+			capturingPlayerColor := getPlayerColor(cp.CurrentCapturingPlayer)
+
+			// Рисуем растущий круг цвета игрока, который захватывает точку
+			animatedRadius := cp.Radius * progress
+			drawCircleOutlineWithEffects(screen, cp.X, cp.Y, animatedRadius, capturingPlayerColor)
+
+			// Информация о прогрессе
+			progressText := fmt.Sprintf("Progress: %.0f%%", progress*100)
+			ebitenutil.DebugPrintAt(screen, progressText, int(cp.X), int(cp.Y)-40)
+
+			// Если захват завершён
+			if progress == 1 {
+				cp.IsCaptured = true
+				cp.CapturingPlayer = cp.CurrentCapturingPlayer // Обновляем владельца
+				cp.EnterTime = time.Time{}                     // Сбрасываем время захвата
 			}
 		}
 
-		if !cp.IsCaptured && !cp.EnterTime.IsZero() {
-			progress := int(time.Since(cp.EnterTime).Seconds())
-			ebitenutil.DebugPrintAt(screen, "Progress: "+strconv.Itoa(progress)+"s", int(cp.X), int(cp.Y)-40)
+		// Если игрок пытается захватить точку
+		if cp.CurrentCapturingPlayer == cp.CapturingPlayer {
+			continue
 		}
 	}
-
 	ebitenutil.DebugPrint(screen, "Player 1 Points: "+strconv.Itoa(l.points1)+"\nPlayer 2 Points: "+strconv.Itoa(l.points2))
 }
 
-func drawCircle(screen *ebiten.Image, x, y, radius float64, clr color.Color) {
+// Функция для рисования контура круга
+func drawCircleOutline(screen *ebiten.Image, x, y, radius float64, clr color.Color) {
+	if radius <= 0 {
+		return // Не рисуем круг с некорректным радиусом
+	}
+
+	imgWidth := int(2 * radius)
+	imgHeight := int(2 * radius)
+
+	if imgWidth <= 0 || imgHeight <= 0 {
+		return // Проверка на корректные размеры изображения
+	}
+
+	img := ebiten.NewImage(imgWidth, imgHeight)
+	img.Fill(color.Transparent)
+
+	// Используем DrawCircle для рисования только контура
+	vector.StrokeCircle(img, float32(radius), float32(radius), float32(radius), 2, clr, true) // 2 - толщина линии
+
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(x-radius, y-radius)
-	img := ebiten.NewImage(int(2*radius), int(2*radius))
-	img.Fill(color.Transparent)
-	vector.DrawFilledCircle(img, float32(radius), float32(radius), float32(radius), clr, true)
 	screen.DrawImage(img, op)
+}
+
+// Функция для рисования контура круга с градиентом и свечением
+func drawCircleOutlineWithEffects(screen *ebiten.Image, x, y, radius float64, clr color.Color) {
+	if radius <= 0 {
+		return // Не рисуем круг с некорректным радиусом
+	}
+
+	imgWidth := int(2 * radius)
+	imgHeight := int(2 * radius)
+
+	if imgWidth <= 0 || imgHeight <= 0 {
+		return // Проверка на корректные размеры изображения
+	}
+
+	img := ebiten.NewImage(imgWidth, imgHeight)
+	img.Fill(color.Transparent)
+
+	// Добавляем эффект свечения через прозрачность и градиент
+	for r := radius; r > radius-10; r-- { // Градиент по краю круга
+		alpha := uint8(255 * (r / radius)) // Прозрачность градиента по радиусу
+		gradientColor := color.RGBA{uint8(clr.(color.RGBA).R), uint8(clr.(color.RGBA).G), uint8(clr.(color.RGBA).B), alpha}
+		vector.StrokeCircle(img, float32(radius), float32(radius), float32(r), 2, gradientColor, true) // Рисуем градиентный контур
+	}
+
+	// Рисуем основной контур круга
+	vector.StrokeCircle(img, float32(radius), float32(radius), float32(radius), 1, clr, true) // 3 - толщина линии
+
+	// Эффект свечения
+	glowRadius := radius + 2 // Радиус свечения немного больше самого круга
+	for r := radius; r < glowRadius; r++ {
+		alpha := uint8(100 * ((glowRadius - r) / glowRadius)) // Прозрачность по краям свечения
+		glowColor := color.RGBA{uint8(clr.(color.RGBA).R), uint8(clr.(color.RGBA).G), uint8(clr.(color.RGBA).B), alpha}
+		vector.StrokeCircle(img, float32(radius), float32(radius), float32(r), 1, glowColor, true)
+	}
+
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(x-radius, y-radius)
+	screen.DrawImage(img, op)
+}
+
+// Функция для получения уникального цвета игрока
+func getPlayerColor(playerID int) color.Color {
+	// Задаём фиксированный набор цветов
+	colors := []color.Color{
+		color.RGBA{255, 0, 0, 255},   // Красный
+		color.RGBA{0, 255, 0, 255},   // Зеленый
+		color.RGBA{0, 0, 255, 255},   // Синий
+		color.RGBA{255, 255, 0, 255}, // Желтый
+		color.RGBA{255, 165, 0, 255}, // Оранжевый
+		color.RGBA{128, 0, 128, 255}, // Фиолетовый
+		// Добавьте больше цветов при необходимости
+	}
+
+	// Используем взятие остатка, чтобы ID игрока не превышал размер массива цветов
+	return colors[playerID%len(colors)]
 }
 
 func (l *Level1) Layout(outsideWidth, outsideHeight int) (int, int) {
