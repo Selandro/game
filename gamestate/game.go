@@ -31,7 +31,7 @@ type Game struct {
 
 func NewGame() *Game {
 	// Загрузка изображения для экрана загрузки
-	loadingImage, _, err := ebitenutil.NewImageFromFile("C:/dev/projects/game v0.0.1/gamestate/loadscreen.png")
+	loadingImage, _, err := ebitenutil.NewImageFromFile("gamestate/loadscreen.png")
 	if err != nil {
 		panic(err) // Обработка ошибки загрузки изображения
 	}

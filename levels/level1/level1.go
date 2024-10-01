@@ -153,13 +153,7 @@ func (l *Level1) updateGameState(state GameState) {
 	for i, player := range state.Players {
 		if player.ID == l.playerID {
 			// Сохраняем предыдущую позицию
-			l.players[i].PrevX = l.players[i].X
-			l.players[i].PrevY = l.players[i].Y
-			l.players[i].LastUpdateTime = time.Now()
-
-			// Обновляем позицию игрока
-			l.playerX = player.X
-			l.playerY = player.Y
+			continue
 		} else {
 			// Для других игроков, просто обновляем их предыдущие координаты
 			l.players[i].PrevX = l.players[i].X
