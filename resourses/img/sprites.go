@@ -21,21 +21,30 @@ type AnimatedSprite struct {
 var (
 	PlayerSprite *AnimatedSprite
 	EnemySprite  *AnimatedSprite
-	Sprites      map[string]*AnimatedSprite
+	Sprites      map[string]*AnimatedSprite = make(map[string]*AnimatedSprite) // Инициализируем карту
 )
 
 func LoadSprites() error {
 	var err error
 
-	// Загружаем спрайты для игрока
-	PlayerSprite, err = loadAnimatedSprite([]string{
-		"resourses/img/sprites/character_run_0.png",
-		"resourses/img/sprites/character_run_1.png",
-		"resourses/img/sprites/character_run_2.png",
-		"resourses/img/sprites/character_run_3.png",
-	})
+	// Загружаем раскадровку спрайтов (6 строк и 8 столбцов)
+	sheet, err := loadSprite("resourses/img/sprites/01Knight.png")
 	if err != nil {
 		return err
+	}
+
+	// Используем вторую строку для анимации бега (всего 8 кадров)
+	frames, err := sliceSpriteSheet(sheet.Image, 6, 8, 2)
+	if err != nil {
+		return err
+	}
+
+	// Создаем анимированный спрайт для игрока
+	Sprites["01Knight"] = &AnimatedSprite{
+		Frames:   frames,
+		Current:  0,
+		Interval: 30,
+		Timer:    0,
 	}
 
 	// Загружаем анимационный спрайт врага
@@ -64,6 +73,50 @@ func loadAnimatedSprite(paths []string) (*AnimatedSprite, error) {
 	}
 	return &AnimatedSprite{Frames: frames, Current: 0, Interval: 30, Timer: 0}, nil
 }
+func sliceSpriteSheet(sheet *ebiten.Image, rows, cols, targetRow int) ([]*ebiten.Image, error) {
+	frames := []*ebiten.Image{}
+	sheetWidth, sheetHeight := sheet.Size()
+
+	frameWidth := sheetWidth / cols
+	frameHeight := sheetHeight / rows
+
+	// Обрезаем спрайты из целевой строки (targetRow), начиная с 0
+	for col := 0; col < cols; col++ {
+		x := col * frameWidth
+		y := (targetRow - 1) * frameHeight // Индексация строк с 0, поэтому вычитаем 1
+
+		// Создаем подизображение для каждого кадра
+		frame := sheet.SubImage(image.Rect(x, y, x+frameWidth, y+frameHeight)).(*ebiten.Image)
+		frames = append(frames, frame)
+	}
+
+	return frames, nil
+}
+func LoadSprites1() error {
+	var err error
+
+	// Загружаем раскадровку спрайтов (6 строк и 8 столбцов)
+	sheet, err := loadSprite("resourses/img/sprites/01Knight.png")
+	if err != nil {
+		return err
+	}
+
+	// Используем вторую строку для анимации бега (всего 8 кадров)
+	frames, err := sliceSpriteSheet(sheet.Image, 6, 8, 2)
+	if err != nil {
+		return err
+	}
+
+	// Создаем анимированный спрайт для игрока
+	Sprites["01Knight"] = &AnimatedSprite{
+		Frames:   frames,
+		Current:  0,
+		Interval: 30,
+		Timer:    0,
+	}
+
+	return nil
+}
 
 func loadSprite(path string) (*Sprite, error) {
 	file, err := os.Open(path)
@@ -81,31 +134,53 @@ func loadSprite(path string) (*Sprite, error) {
 	return &Sprite{Image: ebitenImg}, nil
 }
 
-// Метод для отрисовки анимационного спрайта с учетом отражения
-func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y, scale float64, op *ebiten.DrawImageOptions) {
+// Метод для отрисовки анимационного спрайта с учетом отражения и масштаба
+func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y, scale float64, flipX bool, op *ebiten.DrawImageOptions) {
 	s.Timer++
 	if s.Timer >= s.Interval {
 		s.Timer = 0
 		s.Current = (s.Current + 1) % len(s.Frames) // Переход к следующему кадру
 	}
 
-	// Добавляем масштабирование
-	scaleX, scaleY := 0.5*scale, 0.5*scale
-	op.GeoM.Scale(scaleX, scaleY)
+	// Обнуляем матрицу перед каждым кадром, чтобы избежать накопления трансляций
+	op.GeoM.Reset()
 
-	// Получаем текущие размеры кадра и учитываем масштабирование
-	frameWidth, frameHeight := float64(s.Frames[s.Current].Bounds().Max.X)*scaleX, float64(s.Frames[s.Current].Bounds().Max.Y)*scaleY
+	// Масштабируем изображение по Y
+	op.GeoM.Scale(scale, scale)
 
-	// Корректируем смещение по X, если изображение отражено
-	if op.GeoM.Element(0, 0) < 0 { // Проверяем отражение по оси X
-		op.GeoM.Translate(frameWidth, 0) // Сдвигаем изображение вправо на его ширину
+	// Проверяем направление для отражения по X
+	if flipX {
+		// Отражаем по X, то есть масштабируем по X в отрицательном направлении
+		op.GeoM.Scale(-scale, scale)
+	} else {
+		// Масштабируем по X в положительном направлении (нормальное изображение)
+		op.GeoM.Scale(scale, scale)
 	}
 
-	// Смещаем на центр спрайта с учетом нового размера
-	op.GeoM.Translate(x-frameWidth/2, y-frameHeight/2-60*scale)
+	// Получаем текущий кадр
+	frame := s.Frames[s.Current]
+
+	// Получаем размеры текущего кадра
+	frameWidth, frameHeight := frame.Size()
+
+	// Рассчитываем смещение для центрирования
+	scaledFrameWidth := float64(frameWidth) * scale
+	scaledFrameHeight := float64(frameHeight) * scale
+
+	// Если изображение отражено, корректируем смещение по X
+	if flipX {
+		// Если отражено, сдвигаем изображение на его ширину
+		op.GeoM.Translate(scaledFrameWidth, 0)
+	}
+
+	// Центрируем спрайт относительно координат (x, y)
+	op.GeoM.Translate(-scaledFrameWidth/2, -scaledFrameHeight/2)
+
+	// Перемещаем спрайт к заданным координатам x, y
+	op.GeoM.Translate(x, y)
 
 	// Рисуем текущий кадр
-	screen.DrawImage(s.Frames[s.Current], op)
+	screen.DrawImage(frame, op)
 }
 
 // Метод для отрисовки обычного спрайта

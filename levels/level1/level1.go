@@ -70,7 +70,7 @@ func New(game GameInterface) *Level1 {
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8081") // Уникальный порт для первого клиента
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8083") // Уникальный порт для первого клиента
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
@@ -287,7 +287,7 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 	scaledPlayerY := l.playerY * scale
 
 	// Отрисовываем спрайт игрока с правильной позицией
-	sprites.PlayerSprite.Draw(screen, scaledPlayerX, scaledPlayerY, scale, playerOp)
+	sprites.Sprites["01Knight"].Draw(screen, scaledPlayerX, scaledPlayerY, scale, flipX, playerOp)
 
 	// Отрисовка врагов
 	for _, p := range l.players {
@@ -313,7 +313,7 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 		enemyOp := &ebiten.DrawImageOptions{}
 
 		// Устанавливаем позицию врага
-		sprites.EnemySprite.Draw(screen, x, y, scale, enemyOp) // Отрисовка врага
+		sprites.EnemySprite.Draw(screen, x, y, scale, flipX, enemyOp) // Отрисовка врага
 	}
 
 	for _, cp := range l.capturePoints {
