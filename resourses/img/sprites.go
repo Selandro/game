@@ -21,6 +21,7 @@ type AnimatedSprite struct {
 var (
 	PlayerSprite *AnimatedSprite
 	EnemySprite  *AnimatedSprite
+	Sprites      map[string]*AnimatedSprite
 )
 
 func LoadSprites() error {
@@ -81,23 +82,27 @@ func loadSprite(path string) (*Sprite, error) {
 }
 
 // Метод для отрисовки анимационного спрайта с учетом отражения
-func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y float64, op *ebiten.DrawImageOptions) {
+func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y, scale float64, op *ebiten.DrawImageOptions) {
 	s.Timer++
 	if s.Timer >= s.Interval {
 		s.Timer = 0
 		s.Current = (s.Current + 1) % len(s.Frames) // Переход к следующему кадру
 	}
 
-	// Получаем текущие размеры кадра
-	frameWidth, frameHeight := float64(s.Frames[s.Current].Bounds().Max.X), float64(s.Frames[s.Current].Bounds().Max.Y)
+	// Добавляем масштабирование
+	scaleX, scaleY := 0.5*scale, 0.5*scale
+	op.GeoM.Scale(scaleX, scaleY)
+
+	// Получаем текущие размеры кадра и учитываем масштабирование
+	frameWidth, frameHeight := float64(s.Frames[s.Current].Bounds().Max.X)*scaleX, float64(s.Frames[s.Current].Bounds().Max.Y)*scaleY
 
 	// Корректируем смещение по X, если изображение отражено
 	if op.GeoM.Element(0, 0) < 0 { // Проверяем отражение по оси X
 		op.GeoM.Translate(frameWidth, 0) // Сдвигаем изображение вправо на его ширину
 	}
 
-	// Смещаем на центр спрайта
-	op.GeoM.Translate(x-frameWidth/2, y-frameHeight/2-60)
+	// Смещаем на центр спрайта с учетом нового размера
+	op.GeoM.Translate(x-frameWidth/2, y-frameHeight/2-60*scale)
 
 	// Рисуем текущий кадр
 	screen.DrawImage(s.Frames[s.Current], op)

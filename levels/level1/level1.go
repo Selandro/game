@@ -16,12 +16,13 @@ import (
 )
 
 type Player struct {
-	ID             int       `json:"id"`
-	X              float64   `json:"x"`
-	Y              float64   `json:"y"`
-	PrevX          float64   // предыдущая X позиция для интерполяции
-	PrevY          float64   // предыдущая Y позиция для интерполяции
-	LastUpdateTime time.Time // время последнего обновления с сервера
+	ID             int                     `json:"id"`
+	X              float64                 `json:"x"`
+	Y              float64                 `json:"y"`
+	PrevX          float64                 // Предыдущая X позиция для интерполяции
+	PrevY          float64                 // Предыдущая Y позиция для интерполяции
+	LastUpdateTime time.Time               // Время последнего обновления с сервера
+	Sprite         *sprites.AnimatedSprite // Спрайт игрока
 }
 
 type CapturePoint struct {
@@ -69,7 +70,7 @@ func New(game GameInterface) *Level1 {
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8082") // Уникальный порт для первого клиента
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8081") // Уникальный порт для первого клиента
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
@@ -266,9 +267,10 @@ func lerp(start, end, t float64) float64 {
 }
 
 func (l *Level1) Draw(screen *ebiten.Image) {
+	scale := l.game.GetScale() // Получаем масштаб
+
 	// Определяем флаг для отражения спрайта игрока
 	var flipX bool
-
 	// Определяем направление движения игрока (налево)
 	if ebiten.IsKeyPressed(ebiten.KeyA) {
 		flipX = true
@@ -280,48 +282,64 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 		playerOp.GeoM.Scale(-1, 1) // Отражаем по оси X
 	}
 
+	// Масштабируем координаты игрока только для отрисовки
+	scaledPlayerX := l.playerX * scale
+	scaledPlayerY := l.playerY * scale
+
 	// Отрисовываем спрайт игрока с правильной позицией
-	sprites.PlayerSprite.Draw(screen, l.playerX, l.playerY, playerOp)
+	sprites.PlayerSprite.Draw(screen, scaledPlayerX, scaledPlayerY, scale, playerOp)
 
 	// Отрисовка врагов
 	for _, p := range l.players {
 		if p.ID == l.playerID {
 			continue
 		}
+
 		t := time.Since(p.LastUpdateTime).Seconds() / 0.2
 		if t > 1 {
 			t = 1
 		}
 
-		x := lerp(p.PrevX, p.X, t)
-		y := lerp(p.PrevY, p.Y, t)
+		// Масштабируем координаты только для отрисовки
+		scaledPrevX := p.PrevX * scale
+		scaledX := p.X * scale
+		scaledPrevY := p.PrevY * scale
+		scaledY := p.Y * scale
+
+		x := lerp(scaledPrevX, scaledX, t)
+		y := lerp(scaledPrevY, scaledY, t)
+
 		// Подготавливаем параметры для отрисовки спрайта врага
 		enemyOp := &ebiten.DrawImageOptions{}
 
 		// Устанавливаем позицию врага
-		sprites.EnemySprite.Draw(screen, x, y, enemyOp) // Отрисовка врага
+		sprites.EnemySprite.Draw(screen, x, y, scale, enemyOp) // Отрисовка врага
 	}
 
 	for _, cp := range l.capturePoints {
 		// Отображение информации о точке захвата
-		ebitenutil.DebugPrintAt(screen, "CP: X="+strconv.FormatFloat(cp.X, 'f', 1, 64)+" Y="+strconv.FormatFloat(cp.Y, 'f', 1, 64), int(cp.X), int(cp.Y)-20)
+		cpX := cp.X * scale // Масштабируем координаты захватной точки
+		cpY := cp.Y * scale
 
+		ebitenutil.DebugPrintAt(screen, "CP: X="+strconv.FormatFloat(cp.X, 'f', 1, 64)+" Y="+strconv.FormatFloat(cp.Y, 'f', 1, 64), int(cpX), int(cpY)-int(20*scale))
+
+		// Масштабируем радиус захватной точки
 		if cp.Radius < 10 {
 			cp.Radius = 10
 		}
+		radius := cp.Radius * scale
 
 		// Основной круг точки захвата (красный, если не захвачена)
 		if !cp.IsCaptured {
-			drawCircleOutlineWithEffects(screen, cp.X, cp.Y, cp.Radius, color.RGBA{255, 0, 0, 100})
+			drawCircleOutlineWithEffects(screen, cpX, cpY, radius, color.RGBA{255, 0, 0, 100})
 		} else {
 			// Отображаем цвет игрока, который владеет точкой
 			playerColor := getPlayerColor(cp.CapturingPlayer)
-			drawCircleOutlineWithEffects(screen, cp.X, cp.Y, cp.Radius, playerColor)
+			drawCircleOutlineWithEffects(screen, cpX, cpY, radius, playerColor)
 		}
 
 		// Проверяем, захватывается ли точка
 		if cp.CurrentCapturingPlayer != 0 {
-			// Если захватывает игрок, который уже владеет точкой, ничего не делаем
 			if cp.CurrentCapturingPlayer == cp.CapturingPlayer {
 				continue
 			}
@@ -336,18 +354,18 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 			capturingPlayerColor := getPlayerColor(cp.CurrentCapturingPlayer)
 
 			// Рисуем растущий круг цвета игрока, который захватывает точку
-			animatedRadius := cp.Radius * progress
-			drawCircleOutlineWithEffects(screen, cp.X, cp.Y, animatedRadius, capturingPlayerColor)
+			animatedRadius := radius * progress
+			drawCircleOutlineWithEffects(screen, cpX, cpY, animatedRadius, capturingPlayerColor)
 
 			// Информация о прогрессе
 			progressText := fmt.Sprintf("Progress: %.0f%%", progress*100)
-			ebitenutil.DebugPrintAt(screen, progressText, int(cp.X), int(cp.Y)-40)
+			ebitenutil.DebugPrintAt(screen, progressText, int(cpX), int(cpY)-int(40*scale))
 
 			// Если захват завершён
 			if progress == 1 {
 				cp.IsCaptured = true
-				cp.CapturingPlayer = cp.CurrentCapturingPlayer // Обновляем владельца
-				cp.EnterTime = time.Time{}                     // Сбрасываем время захвата
+				cp.CapturingPlayer = cp.CurrentCapturingPlayer
+				cp.EnterTime = time.Time{}
 			}
 		}
 
@@ -356,6 +374,8 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 			continue
 		}
 	}
+
+	// Отображаем текст с учётом масштаба
 	ebitenutil.DebugPrint(screen, "Player 1 Points: "+strconv.Itoa(l.points1)+"\nPlayer 2 Points: "+strconv.Itoa(l.points2))
 }
 
