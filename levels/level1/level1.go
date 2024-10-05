@@ -77,7 +77,7 @@ func New(game GameInterface, playerName, playerSkin string) *Level1 {
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8081") // Уникальный порт для первого клиента
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8082") // Уникальный порт для первого клиента
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}

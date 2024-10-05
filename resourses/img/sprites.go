@@ -25,26 +25,34 @@ var (
 )
 
 func LoadSprites() error {
-	var err error
 
-	// Загружаем раскадровку спрайтов (6 строк и 8 столбцов)
-	sheet, err := loadSprite("resourses/img/sprites/01Knight.png")
-	if err != nil {
-		return err
+	// Массив для всех файлов спрайтов
+	knightFiles := []string{
+		"01Knight", "02Knight", "03Knight", "04Knight", "05Knight",
+		"06Knight", "07Knight", "08Knight", "09Knight", "10Knight",
 	}
 
-	// Используем вторую строку для анимации бега (всего 8 кадров)
-	frames, err := sliceSpriteSheet(sheet.Image, 6, 8, 2)
-	if err != nil {
-		return err
-	}
+	// Цикл по всем файлам спрайтов
+	for _, knight := range knightFiles {
+		path := "resourses/img/sprites/" + knight + ".png"
+		sheet, err := loadSprite(path)
+		if err != nil {
+			return err
+		}
 
-	// Создаем анимированный спрайт для игрока
-	Sprites["01Knight"] = &AnimatedSprite{
-		Frames:   frames,
-		Current:  0,
-		Interval: 30,
-		Timer:    0,
+		// Используем вторую строку для анимации бега (всего 8 кадров)
+		frames, err := sliceSpriteSheet(sheet.Image, 6, 8, 2) // Меняйте строку для других типов анимаций
+		if err != nil {
+			return err
+		}
+
+		// Создаем анимированный спрайт и добавляем его в карту Sprites
+		Sprites[knight] = &AnimatedSprite{
+			Frames:   frames,
+			Current:  0,
+			Interval: 30, // Задайте интервал анимации по вашему усмотрению
+			Timer:    0,
+		}
 	}
 
 	return nil
