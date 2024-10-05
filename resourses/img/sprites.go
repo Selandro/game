@@ -47,32 +47,9 @@ func LoadSprites() error {
 		Timer:    0,
 	}
 
-	// Загружаем анимационный спрайт врага
-	EnemySprite, err = loadAnimatedSprite([]string{
-		"resourses/img/sprites/character_run_01.png",
-		"resourses/img/sprites/character_run_12.png",
-		"resourses/img/sprites/character_run_23.png",
-		"resourses/img/sprites/character_run_34.png",
-	})
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
-// Загрузка анимационного спрайта
-func loadAnimatedSprite(paths []string) (*AnimatedSprite, error) {
-	frames := make([]*ebiten.Image, len(paths))
-	for i, path := range paths {
-		img, err := loadSprite(path)
-		if err != nil {
-			return nil, err
-		}
-		frames[i] = img.Image
-	}
-	return &AnimatedSprite{Frames: frames, Current: 0, Interval: 30, Timer: 0}, nil
-}
 func sliceSpriteSheet(sheet *ebiten.Image, rows, cols, targetRow int) ([]*ebiten.Image, error) {
 	frames := []*ebiten.Image{}
 	sheetWidth, sheetHeight := sheet.Size()
@@ -91,31 +68,6 @@ func sliceSpriteSheet(sheet *ebiten.Image, rows, cols, targetRow int) ([]*ebiten
 	}
 
 	return frames, nil
-}
-func LoadSprites1() error {
-	var err error
-
-	// Загружаем раскадровку спрайтов (6 строк и 8 столбцов)
-	sheet, err := loadSprite("resourses/img/sprites/01Knight.png")
-	if err != nil {
-		return err
-	}
-
-	// Используем вторую строку для анимации бега (всего 8 кадров)
-	frames, err := sliceSpriteSheet(sheet.Image, 6, 8, 2)
-	if err != nil {
-		return err
-	}
-
-	// Создаем анимированный спрайт для игрока
-	Sprites["01Knight"] = &AnimatedSprite{
-		Frames:   frames,
-		Current:  0,
-		Interval: 30,
-		Timer:    0,
-	}
-
-	return nil
 }
 
 func loadSprite(path string) (*Sprite, error) {
@@ -181,13 +133,4 @@ func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y, scale float64, flipX b
 
 	// Рисуем текущий кадр
 	screen.DrawImage(frame, op)
-}
-
-// Метод для отрисовки обычного спрайта
-func (s *Sprite) Draw(screen *ebiten.Image, x, y float64) {
-	op := &ebiten.DrawImageOptions{}
-	// Смещаем на центр спрайта
-	spriteWidth, spriteHeight := float64(s.Image.Bounds().Max.X), float64(s.Image.Bounds().Max.Y)
-	op.GeoM.Translate(x-spriteWidth/2, y-spriteHeight/2) // Центрируем по координатам
-	screen.DrawImage(s.Image, op)
 }

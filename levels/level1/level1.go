@@ -22,6 +22,9 @@ type Player struct {
 	PrevX          float64                 // Предыдущая X позиция для интерполяции
 	PrevY          float64                 // Предыдущая Y позиция для интерполяции
 	LastUpdateTime time.Time               // Время последнего обновления с сервера
+	Name           string                  `json:"name"` // Добавляем JSON-тег для имени
+	Skin           string                  `json:"skin"` // Добавляем JSON-тег для скина
+	FlipX          bool                    `json:"flipX"`
 	Sprite         *sprites.AnimatedSprite // Спрайт игрока
 }
 
@@ -46,6 +49,7 @@ type GameState struct {
 type GameInterface interface {
 	SwitchLevel(level int)
 	GetScale() float64
+	SetPlayerInfo(name, skin string)
 }
 
 type Level1 struct {
@@ -55,8 +59,11 @@ type Level1 struct {
 	playerY       float64
 	capturePoints []CapturePoint
 	players       []Player
+	FlipX         bool
 	points1       int
 	points2       int
+	playerName    string
+	playerSkin    string
 	conn          *net.UDPConn
 	done          chan struct{}
 	lastUpdate    time.Time
@@ -64,13 +71,13 @@ type Level1 struct {
 }
 
 // New инициализирует уровень и подключается к серверу через UDP
-func New(game GameInterface) *Level1 {
+func New(game GameInterface, playerName, playerSkin string) *Level1 {
 	// Настраиваем UDP соединение
 	serverAddr, err := net.ResolveUDPAddr("udp", "localhost:8080")
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8083") // Уникальный порт для первого клиента
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8081") // Уникальный порт для первого клиента
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
@@ -85,6 +92,8 @@ func New(game GameInterface) *Level1 {
 		serverAddr: serverAddr,
 		done:       make(chan struct{}),
 		playerID:   0, // Пока ID неизвестен
+		playerName: playerName,
+		playerSkin: playerSkin,
 	}
 
 	// Получение playerID от сервера
@@ -99,6 +108,8 @@ func (l *Level1) requestPlayerID() {
 	// Отправляем запрос на получение playerID
 	initialMsg := map[string]interface{}{
 		"request": "get_player_id",
+		"name":    l.playerName, // Передаем имя игрока
+		"skin":    l.playerSkin, // Передаем скин игрока
 	}
 	data, _ := json.Marshal(initialMsg)
 	l.conn.Write(data)
@@ -162,11 +173,18 @@ func (l *Level1) updateGameState(state GameState) {
 			l.players[i].PrevX = l.players[i].X
 			l.players[i].PrevY = l.players[i].Y
 			l.players[i].LastUpdateTime = time.Now()
+			l.players[i].Name = player.Name // Обновляем имя
+			l.players[i].Skin = player.Skin // Обновляем скин
+			l.players[i].FlipX = player.FlipX
+			fmt.Println(l.players[i].PrevX, l.players[i].PrevY, l.players[i].Name, l.players[i].Skin, l.players[i].FlipX)
+
 		}
+
 	}
 }
 
 func (l *Level1) Update() error {
+
 	keys := map[string]bool{
 		"w": ebiten.IsKeyPressed(ebiten.KeyW),
 		"s": ebiten.IsKeyPressed(ebiten.KeyS),
@@ -185,6 +203,7 @@ func (l *Level1) Update() error {
 	}
 	if keys["a"] {
 		l.playerX -= speed
+		l.FlipX = true
 	}
 	if keys["d"] {
 		l.playerX += speed
@@ -209,9 +228,10 @@ func (l *Level1) sendPositionUpdate() {
 	if time.Since(l.lastUpdate) > 10*time.Millisecond {
 		// Формируем данные для отправки
 		data := map[string]interface{}{
-			"id": l.playerID,
-			"x":  l.playerX,
-			"y":  l.playerY,
+			"id":    l.playerID,
+			"x":     l.playerX,
+			"y":     l.playerY,
+			"flipX": l.FlipX, // Добавляем состояние FlipX
 		}
 
 		// Сериализуем данные в JSON
@@ -270,15 +290,17 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 	scale := l.game.GetScale() // Получаем масштаб
 
 	// Определяем флаг для отражения спрайта игрока
-	var flipX bool
+
 	// Определяем направление движения игрока (налево)
 	if ebiten.IsKeyPressed(ebiten.KeyA) {
-		flipX = true
+		l.FlipX = true
+	} else {
+		l.FlipX = false
 	}
 
 	// Подготавливаем параметры для отрисовки спрайта игрока
 	playerOp := &ebiten.DrawImageOptions{}
-	if flipX {
+	if l.FlipX {
 		playerOp.GeoM.Scale(-1, 1) // Отражаем по оси X
 	}
 
@@ -287,7 +309,7 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 	scaledPlayerY := l.playerY * scale
 
 	// Отрисовываем спрайт игрока с правильной позицией
-	sprites.Sprites["01Knight"].Draw(screen, scaledPlayerX, scaledPlayerY, scale, flipX, playerOp)
+	sprites.Sprites[l.playerSkin].Draw(screen, scaledPlayerX, scaledPlayerY, scale, l.FlipX, playerOp)
 
 	// Отрисовка врагов
 	for _, p := range l.players {
@@ -311,9 +333,11 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 
 		// Подготавливаем параметры для отрисовки спрайта врага
 		enemyOp := &ebiten.DrawImageOptions{}
-
+		if p.FlipX {
+			enemyOp.GeoM.Scale(-1, 1) // Отражаем по оси X
+		}
 		// Устанавливаем позицию врага
-		sprites.EnemySprite.Draw(screen, x, y, scale, flipX, enemyOp) // Отрисовка врага
+		sprites.Sprites[p.Skin].Draw(screen, x, y, scale, p.FlipX, enemyOp) // Отрисовка врага
 	}
 
 	for _, cp := range l.capturePoints {
@@ -377,30 +401,6 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 
 	// Отображаем текст с учётом масштаба
 	ebitenutil.DebugPrint(screen, "Player 1 Points: "+strconv.Itoa(l.points1)+"\nPlayer 2 Points: "+strconv.Itoa(l.points2))
-}
-
-// Функция для рисования контура круга
-func drawCircleOutline(screen *ebiten.Image, x, y, radius float64, clr color.Color) {
-	if radius <= 0 {
-		return // Не рисуем круг с некорректным радиусом
-	}
-
-	imgWidth := int(2 * radius)
-	imgHeight := int(2 * radius)
-
-	if imgWidth <= 0 || imgHeight <= 0 {
-		return // Проверка на корректные размеры изображения
-	}
-
-	img := ebiten.NewImage(imgWidth, imgHeight)
-	img.Fill(color.Transparent)
-
-	// Используем DrawCircle для рисования только контура
-	vector.StrokeCircle(img, float32(radius), float32(radius), float32(radius), 2, clr, true) // 2 - толщина линии
-
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(x-radius, y-radius)
-	screen.DrawImage(img, op)
 }
 
 // Функция для рисования контура круга с градиентом и свечением

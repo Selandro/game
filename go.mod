@@ -3,7 +3,6 @@ module main.go
 go 1.22.0
 
 require (
-	github.com/gorilla/websocket v1.5.3
 	github.com/hajimehoshi/ebiten/v2 v2.7.8
 	github.com/quasilyte/ebitengine-input v0.9.1
 )

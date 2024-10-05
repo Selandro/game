@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"main.go/levels/level1"
-	"main.go/levels/level2"
 	"main.go/levels/level5"
+	"main.go/levels/menu"
 	sprites "main.go/resourses/img"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -27,6 +27,8 @@ type Game struct {
 	state        GameState
 	scale        float64
 	loadingImage *ebiten.Image // Поле для хранения изображения загрузочного экрана
+	playerName   string        // Поле для имени игрока
+	playerSkin   string        // Поле для скина игрока
 }
 
 func NewGame() *Game {
@@ -40,7 +42,10 @@ func NewGame() *Game {
 		loadingImage: loadingImage, // Инициализация изображения загрузочного экрана
 	}
 }
-
+func (g *Game) SetPlayerInfo(name, skin string) {
+	g.playerName = name
+	g.playerSkin = skin
+}
 func (g *Game) Update() error {
 	switch g.state {
 	case Playing:
@@ -96,9 +101,9 @@ func (g *Game) loadNextLevel() {
 		if err := sprites.LoadSprites(); err != nil {
 			log.Fatal("Ошибка загрузки спрайтов:", err)
 		}
-		g.currentLevel = level1.New(g)
+		g.currentLevel = level1.New(g, g.playerName, g.playerSkin)
 	case 2:
-		g.currentLevel = level2.New(g)
+		g.currentLevel = menu.New(g)
 	case 5:
 		g.currentLevel = level5.New(g)
 	default:

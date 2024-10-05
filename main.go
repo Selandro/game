@@ -8,7 +8,7 @@ import (
 func main() {
 
 	game := gamestate.NewGame()
-	game.SwitchLevel(1) // Начальный уровень
+	game.SwitchLevel(2) // Начальный уровень
 
 	// Установка оконного режима
 	ebiten.SetWindowSize(1600, 900)
