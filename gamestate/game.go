@@ -3,7 +3,6 @@ package gamestate
 import (
 	"log"
 	"math"
-	"time"
 
 	"main.go/levels/level1"
 	"main.go/levels/level5"
@@ -94,13 +93,17 @@ func (g *Game) SwitchLevel(level int) {
 }
 
 func (g *Game) loadNextLevel() {
-	time.Sleep(1 * time.Second) // Имитация загрузки
 
 	switch g.nextLevel {
 	case 1:
-
+		if err := sprites.LoadSprites(); err != nil {
+			log.Fatal("Ошибка загрузки спрайтов:", err)
+		}
 		g.currentLevel = level1.New(g, g.playerName, g.playerSkin)
 	case 2:
+		if err := sprites.LoadSprites(); err != nil {
+			log.Fatal("Ошибка загрузки спрайтов:", err)
+		}
 		g.currentLevel = menu.New(g)
 		if err := sprites.LoadSprites(); err != nil {
 			log.Fatal("Ошибка загрузки спрайтов:", err)

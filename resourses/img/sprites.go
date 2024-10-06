@@ -121,7 +121,7 @@ func (s *AnimatedSprite) Draw(screen *ebiten.Image, x, y, scale float64, flipX b
 	frame := s.Frames[s.Current]
 
 	// Получаем размеры текущего кадра
-	frameWidth, frameHeight := Bounds().Size()
+	frameWidth, frameHeight := frame.Size()
 
 	// Рассчитываем смещение для центрирования
 	scaledFrameWidth := float64(frameWidth) * scale

@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"log"
 	"net"
+	"sort"
 	"strconv"
 	"time"
 
@@ -26,6 +27,8 @@ type Player struct {
 	Skin           string                  `json:"skin"` // Добавляем JSON-тег для скина
 	FlipX          bool                    `json:"flipX"`
 	Sprite         *sprites.AnimatedSprite // Спрайт игрока
+	Points         int                     `json:"points"` // Добавляем поле для очков
+
 }
 
 type CapturePoint struct {
@@ -42,8 +45,6 @@ type CapturePoint struct {
 type GameState struct {
 	Players       []Player       `json:"players"`
 	CapturePoints []CapturePoint `json:"capturePoints"`
-	Points1       int            `json:"points1"`
-	Points2       int            `json:"points2"`
 }
 
 type GameInterface interface {
@@ -60,8 +61,7 @@ type Level1 struct {
 	capturePoints []CapturePoint
 	players       []Player
 	FlipX         bool
-	points1       int
-	points2       int
+	Points        int
 	playerName    string
 	playerSkin    string
 	conn          *net.UDPConn
@@ -77,7 +77,7 @@ func New(game GameInterface, playerName, playerSkin string) *Level1 {
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
-	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8082") // Уникальный порт для первого клиента
+	localAddr, err := net.ResolveUDPAddr("udp", "localhost:8089") // Уникальный порт для первого клиента
 	if err != nil {
 		log.Fatal("Ошибка при резолве адреса UDP:", err)
 	}
@@ -94,6 +94,7 @@ func New(game GameInterface, playerName, playerSkin string) *Level1 {
 		playerID:   0, // Пока ID неизвестен
 		playerName: playerName,
 		playerSkin: playerSkin,
+		Points:     0,
 	}
 
 	// Получение playerID от сервера
@@ -109,7 +110,7 @@ func (l *Level1) requestPlayerID() {
 	initialMsg := map[string]interface{}{
 		"request": "get_player_id",
 		"name":    l.playerName, // Передаем имя игрока
-		"skin":    l.playerSkin, // Передаем скин игрока
+		"skin":    l.playerSkin,
 	}
 	data, _ := json.Marshal(initialMsg)
 	l.conn.Write(data)
@@ -160,12 +161,11 @@ func (l *Level1) listenForUpdates() {
 func (l *Level1) updateGameState(state GameState) {
 	l.players = state.Players
 	l.capturePoints = state.CapturePoints
-	l.points1 = state.Points1
-	l.points2 = state.Points2
 
 	// Обновляем координаты только для своего игрока
 	for i, player := range state.Players {
 		if player.ID == l.playerID {
+			l.Points = player.Points
 			// Сохраняем предыдущую позицию
 			continue
 		} else {
@@ -176,7 +176,6 @@ func (l *Level1) updateGameState(state GameState) {
 			l.players[i].Name = player.Name // Обновляем имя
 			l.players[i].Skin = player.Skin // Обновляем скин
 			l.players[i].FlipX = player.FlipX
-			fmt.Println(l.players[i].PrevX, l.players[i].PrevY, l.players[i].Name, l.players[i].Skin, l.players[i].FlipX)
 
 		}
 
@@ -338,8 +337,11 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 		}
 		// Устанавливаем позицию врага
 		sprites.Sprites[p.Skin].Draw(screen, x, y, scale, p.FlipX, enemyOp) // Отрисовка врага
+		pointsText := fmt.Sprintf(p.Name)
+		ebitenutil.DebugPrintAt(screen, pointsText, int(x), int(y)-20)
 	}
-
+	playerPointsText := fmt.Sprintf(l.playerName)
+	ebitenutil.DebugPrintAt(screen, playerPointsText, int(scaledPlayerX), int(scaledPlayerY)-20)
 	for _, cp := range l.capturePoints {
 		// Отображение информации о точке захвата
 		cpX := cp.X * scale // Масштабируем координаты захватной точки
@@ -400,7 +402,32 @@ func (l *Level1) Draw(screen *ebiten.Image) {
 	}
 
 	// Отображаем текст с учётом масштаба
-	ebitenutil.DebugPrint(screen, "Player 1 Points: "+strconv.Itoa(l.points1)+"\nPlayer 2 Points: "+strconv.Itoa(l.points2))
+	l.drawPlayerScores(screen)
+}
+
+// drawPlayerScores рисует имена и очки всех игроков
+func (l *Level1) drawPlayerScores(screen *ebiten.Image) {
+	// Копируем слайс игроков для сортировки (если это глобальная переменная)
+	sortedPlayers := make([]Player, len(l.players))
+	copy(sortedPlayers, l.players)
+
+	// Сортируем игроков по количеству очков (от большего к меньшему)
+	sort.Slice(sortedPlayers, func(i, j int) bool {
+		return sortedPlayers[i].Points > sortedPlayers[j].Points
+	})
+
+	// Смещение по Y для отрисовки
+	yOffset := 10
+	for _, player := range sortedPlayers {
+		// Форматируем строку: "Имя игрока: Очки"
+		text := fmt.Sprintf("%s: %d", player.Name, player.Points)
+
+		// Отрисовываем текст на экране
+		ebitenutil.DebugPrintAt(screen, text, 10, yOffset)
+
+		// Смещаем строку для следующего игрока
+		yOffset += 20
+	}
 }
 
 // Функция для рисования контура круга с градиентом и свечением
