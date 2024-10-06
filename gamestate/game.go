@@ -98,12 +98,13 @@ func (g *Game) loadNextLevel() {
 
 	switch g.nextLevel {
 	case 1:
-		if err := sprites.LoadSprites(); err != nil {
-			log.Fatal("Ошибка загрузки спрайтов:", err)
-		}
+
 		g.currentLevel = level1.New(g, g.playerName, g.playerSkin)
 	case 2:
 		g.currentLevel = menu.New(g)
+		if err := sprites.LoadSprites(); err != nil {
+			log.Fatal("Ошибка загрузки спрайтов:", err)
+		}
 	case 5:
 		g.currentLevel = level5.New(g)
 	default:
